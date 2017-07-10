@@ -94,17 +94,10 @@ module ChupaText
           end
           true
         end
-        if data.uri.class == URI::Generic
-          debug do
-            "#{log_tag}[load][html] #{data.uri}"
-          end
-          view.load_html(data.body, data.uri.to_s)
-        else
-          debug do
-            "#{log_tag}[load][uri] #{data.uri}"
-          end
-          view.load_uri(data.uri.to_s)
+        debug do
+          "#{log_tag}[load][html] #{data.uri}"
         end
+        view.load_html(data.body, data.uri.to_s)
 
         main_context = GLib::MainContext.default
         until finished
