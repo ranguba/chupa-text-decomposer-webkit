@@ -59,7 +59,8 @@ module ChupaText
       def create_screenshot(data)
         screenshot = nil
 
-        view = WebKit2Gtk::WebView.new
+        view_context = WebKit2Gtk::WebContext.new(ephemeral: true)
+        view = WebKit2Gtk::WebView.new(context: view_context)
         window = Gtk::OffscreenWindow.new
         window.set_default_size(800, 600)
         window.add(view)

@@ -40,7 +40,7 @@ Gem::Specification.new do |spec|
   spec.files += Dir.glob("test/**/*")
 
   spec.add_runtime_dependency("chupa-text", ">= 1.0.7")
-  spec.add_runtime_dependency("webkit2-gtk")
+  spec.add_runtime_dependency("webkit2-gtk", ">= 3.1.7")
 
   spec.add_development_dependency("bundler")
   spec.add_development_dependency("rake")
