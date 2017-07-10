@@ -19,6 +19,8 @@ require "webkit2-gtk"
 module ChupaText
   module Decomposers
     class WebKit < Decomposer
+      include Loggable
+
       registry.register("webkit", self)
 
       TARGET_EXTENSIONS = ["htm", "html", "xhtml"]
@@ -26,9 +28,11 @@ module ChupaText
         "text/html",
         "application/xhtml+xml",
       ]
+      AVAILABLE_ATTRIBUTE_NAME = "decomposer-webkit-screenshot-available"
       def target?(data)
         return false unless data.need_screenshot?
         return false if data.screenshot
+        return false unless data[AVAILABLE_ATTRIBUTE_NAME].nil?
 
         source = data.source
         return false if source.nil?
@@ -36,11 +40,18 @@ module ChupaText
         return true if TARGET_EXTENSIONS.include?(source.extension)
         return true if TARGET_MIME_TYPES.include?(source.mime_type)
 
+        source_body = source.body
+        return false if source_body.nil?
+
+        return true if source_body.start_with?("<!DOCTYPE html ")
+        return true if source_body.start_with?("<html")
+
         false
       end
 
       def decompose(data)
         data.screenshot = create_screenshot(data.source)
+        data[AVAILABLE_ATTRIBUTE_NAME] = !data.screenshot.nil?
         yield(data)
       end
 
@@ -48,48 +59,83 @@ module ChupaText
       def create_screenshot(data)
         screenshot = nil
 
-        screenshot_width, screenshot_height = data.expected_screenshot_size
-
-        main_context = GLib::MainContext.default
         view = WebKit2Gtk::WebView.new
-        view.load_uri(data.uri.to_s)
+        window = Gtk::OffscreenWindow.new
+        window.set_default_size(800, 600)
+        window.add(view)
+        window.show_all
+
         finished = false
         view.signal_connect("load-changed") do |_, load_event|
+          debug do
+            "#{log_tag}[load][#{load_event.nick}] #{view.uri}"
+          end
+
           case load_event
           when WebKit2Gtk::LoadEvent::FINISHED
             view.get_snapshot(:full_document, :none) do |_, result|
               finished = true
               snapshot_surface = view.get_snapshot_finish(result)
-              screenshot_surface = Cairo::ImageSurface.new(:argb32,
-                                                           screenshot_width,
-                                                           screenshot_height)
-              context = Cairo::Context.new(screenshot_surface)
-              context.set_source_color(:white)
-              context.paint
-              ratio = screenshot_width.to_f / snapshot_surface.width
-              context.scale(ratio, ratio)
-              context.set_source(snapshot_surface)
-              context.paint
-              png = StringIO.new
-              screenshot_surface.write_to_png(png)
-              screenshot = Screenshot.new("image/png",
-                                          [png.string].pack("m*"),
-                                          "base64")
+              unless snapshot_surface.width.zero?
+                png = convert_snapshot_surface_to_png(data, snapshot_surface)
+                screenshot = Screenshot.new("image/png",
+                                            [png].pack("m*"),
+                                            "base64")
+              end
             end
           end
         end
         view.signal_connect("load-failed") do |_, _, failed_uri, error|
           finished = true
-          message = "failed to load URI: #{failed_uri}: "
-          message << "#{error.class}(#{error.code}): #{error.message}"
-          puts(message)
+          error do
+            message = "failed to load URI: #{failed_uri}: "
+            message << "#{error.class}(#{error.code}): #{error.message}"
+            "#{log_tag}[load][failed] #{message}"
+          end
           true
         end
+        if data.uri.class == URI::Generic
+          debug do
+            "#{log_tag}[load][html] #{data.uri}"
+          end
+          view.load_html(data.body, data.uri.to_s)
+        else
+          debug do
+            "#{log_tag}[load][uri] #{data.uri}"
+          end
+          view.load_uri(data.uri.to_s)
+        end
+
+        main_context = GLib::MainContext.default
         until finished
           main_context.iteration(true)
         end
 
         screenshot
+      end
+
+      def convert_snapshot_surface_to_png(data, snapshot_surface)
+        screenshot_width, screenshot_height = data.expected_screenshot_size
+
+        screenshot_surface = Cairo::ImageSurface.new(:argb32,
+                                                     screenshot_width,
+                                                     screenshot_height)
+        context = Cairo::Context.new(screenshot_surface)
+        context.set_source_color(:white)
+        context.paint
+
+        ratio = screenshot_width.to_f / snapshot_surface.width
+        context.scale(ratio, ratio)
+        context.set_source(snapshot_surface)
+        context.paint
+
+        png = StringIO.new
+        screenshot_surface.write_to_png(png)
+        png.string
+      end
+
+      def log_tag
+        "[decomposer][webkit]"
       end
     end
   end
