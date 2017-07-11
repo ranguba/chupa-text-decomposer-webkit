@@ -68,18 +68,30 @@ module ChupaText
 
         status = {
           finished: false,
+          load_failed: false,
           screenshot: nil,
         }
         prepare_screenshot(data, view, status)
-        debug do
-          "#{log_tag}[load][html] #{data.uri}"
-        end
-        view.load_html(data.body, data.uri.to_s)
 
         main_context = GLib::MainContext.default
         timeout(compute_timeout_second, view, main_context, status) do
+          debug do
+            "#{log_tag}[load][URI] #{data.uri}"
+          end
+          view.load_uri(data.uri.to_s)
           until status[:finished]
             main_context.iteration(true)
+          end
+
+          if status[:load_failed]
+            status[:finished] = false
+            debug do
+              "#{log_tag}[load][HTML] #{data.uri}"
+            end
+            view.load_html(data.body, data.uri.to_s)
+            until status[:finished]
+              main_context.iteration(true)
+            end
           end
         end
 
@@ -138,6 +150,7 @@ module ChupaText
         end
         view.signal_connect("load-failed") do |_, _, failed_uri, error|
           status[:finished] = true
+          status[:load_failed] = true
           error do
             message = "failed to load URI: #{failed_uri}: "
             message << "#{error.class}(#{error.code}): #{error.message}"
