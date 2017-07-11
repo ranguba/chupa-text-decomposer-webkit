@@ -59,7 +59,7 @@ module ChupaText
       def create_screenshot(data)
         screenshot = nil
 
-        @@view_context ||= WebKit2Gtk::WebContext.new(ephemeral: true)
+        @@view_context ||= create_view_context
         view = WebKit2Gtk::WebView.new(context: @@view_context)
         window = Gtk::OffscreenWindow.new
         window.set_default_size(800, 600)
@@ -86,6 +86,27 @@ module ChupaText
         window.destroy
 
         status[:screenshot]
+      end
+
+      def create_view_context
+        context = WebKit2Gtk::WebContext.new(ephemeral: true)
+        http_proxy = ENV["http_proxy"]
+        https_proxy = ENV["https_proxy"]
+        ftp_proxy = ENV["ftp_proxy"]
+        if http_proxy or https_proxy or ftp_proxy
+          proxy_settings = WebKit2Gtk::NetworkProxySettings.new
+          if http_proxy
+            proxy_settings.add_proxy_for_scheme("http", http_proxy)
+          end
+          if https_proxy
+            proxy_settings.add_proxy_for_scheme("https", https_proxy)
+          end
+          if ftp_proxy
+            proxy_settings.add_proxy_for_scheme("ftp", ftp_proxy)
+          end
+          context.set_network_proxy_settings(:custom, proxy_settings)
+        end
+        context
       end
 
       def prepare_screenshot(data, view, status)
