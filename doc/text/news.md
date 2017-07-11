@@ -1,5 +1,11 @@
 # News
 
+## 1.0.2: 2017-07-11
+
+### Improvements
+
+  * Reduces required resources.
+
 ## 1.0.1: 2017-07-11
 
 ### Improvements
