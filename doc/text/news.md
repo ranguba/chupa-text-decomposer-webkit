@@ -1,10 +1,16 @@
 # News
 
+## 1.0.3: 2017-07-11
+
+### Improvements
+
+  * Supported timeout.
+
 ## 1.0.2: 2017-07-11
 
 ### Improvements
 
-  * Reduces required resources.
+  * Reduced required resources.
 
 ## 1.0.1: 2017-07-11
 
