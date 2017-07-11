@@ -96,9 +96,16 @@ module ChupaText
 
           case load_event
           when WebKit2Gtk::LoadEvent::FINISHED
+            debug do
+              "#{log_tag}[screenshot][start] #{view.uri}"
+            end
             view.get_snapshot(:full_document, :none) do |_, result|
               status[:finished] = true
               snapshot_surface = view.get_snapshot_finish(result)
+              debug do
+                size = "#{snapshot_surface.width}x#{snapshot_surface.height}"
+                "#{log_tag}[screenshot][finish] #{view.uri}: #{size}"
+              end
               unless snapshot_surface.width.zero?
                 png = convert_snapshot_surface_to_png(data, snapshot_surface)
                 status[:screenshot] = Screenshot.new("image/png",
