@@ -66,7 +66,29 @@ module ChupaText
         window.add(view)
         window.show_all
 
-        finished = false
+        status = {
+          finished: false,
+          screenshot: nil,
+        }
+        prepare_screenshot(data, view, status)
+        debug do
+          "#{log_tag}[load][html] #{data.uri}"
+        end
+        view.load_html(data.body, data.uri.to_s)
+
+        main_context = GLib::MainContext.default
+        timeout(compute_timeout_second, view, main_context, status) do
+          until status[:finished]
+            main_context.iteration(true)
+          end
+        end
+
+        window.destroy
+
+        status[:screenshot]
+      end
+
+      def prepare_screenshot(data, view, status)
         view.signal_connect("load-changed") do |_, load_event|
           debug do
             "#{log_tag}[load][#{load_event.nick}] #{view.uri}"
@@ -75,19 +97,19 @@ module ChupaText
           case load_event
           when WebKit2Gtk::LoadEvent::FINISHED
             view.get_snapshot(:full_document, :none) do |_, result|
-              finished = true
+              status[:finished] = true
               snapshot_surface = view.get_snapshot_finish(result)
               unless snapshot_surface.width.zero?
                 png = convert_snapshot_surface_to_png(data, snapshot_surface)
-                screenshot = Screenshot.new("image/png",
-                                            [png].pack("m*"),
-                                            "base64")
+                status[:screenshot] = Screenshot.new("image/png",
+                                                     [png].pack("m*"),
+                                                     "base64")
               end
             end
           end
         end
         view.signal_connect("load-failed") do |_, _, failed_uri, error|
-          finished = true
+          status[:finished] = true
           error do
             message = "failed to load URI: #{failed_uri}: "
             message << "#{error.class}(#{error.code}): #{error.message}"
@@ -95,18 +117,6 @@ module ChupaText
           end
           true
         end
-        debug do
-          "#{log_tag}[load][html] #{data.uri}"
-        end
-        view.load_html(data.body, data.uri.to_s)
-
-        main_context = GLib::MainContext.default
-        until finished
-          main_context.iteration(true)
-        end
-        window.destroy
-
-        screenshot
       end
 
       def convert_snapshot_surface_to_png(data, snapshot_surface)
@@ -127,6 +137,34 @@ module ChupaText
         png = StringIO.new
         screenshot_surface.write_to_png(png)
         png.string
+      end
+
+      def timeout(second, view, main_context, status)
+        timeout_id = nil
+        timeout_source = GLib::Timeout.source_new_seconds(second)
+        timeout_source.set_callback do
+          timeout_id = nil
+          status[:finished] = true
+          error do
+            message = "timeout to load URI: #{second}s: #{view.uri}"
+            "#{log_tag}[load][timeout] #{message}"
+          end
+          GLib::Source::REMOVE
+        end
+        timeout_id = timeout_source.attach(main_context)
+        yield
+        GLib::Source.remove(timeout_id) if timeout_id
+      end
+
+      def compute_timeout_second
+        default_timeout = 5
+        timeout_string =
+          ENV["CHUPA_TEXT_DECOMPOSER_WEBKIT_TIMEOUT"] || default_timeout.to_s
+        begin
+          Integer(timeout_string)
+        rescue ArgumentError
+          default_timeout
+        end
       end
 
       def log_tag
