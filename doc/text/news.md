@@ -1,5 +1,13 @@
 # News
 
+## 1.0.4: 2017-07-12
+
+### Improvements
+
+  * Added more logs.
+
+  * Supported proxy.
+
 ## 1.0.3: 2017-07-11
 
 ### Improvements
