@@ -135,17 +135,26 @@ module ChupaText
                                 @screenshot_cancellable) do |_, result|
                 @screenshot_cancellable = nil
                 @main_loop.quit
-                snapshot_surface = view.get_snapshot_finish(result)
-                debug do
-                  size = "#{snapshot_surface.width}x#{snapshot_surface.height}"
-                  "#{log_tag}[screenshot][finish] #{view.uri}: #{size}"
-                end
-                unless snapshot_surface.width.zero?
-                  png = convert_snapshot_surface_to_png(snapshot_surface)
-                  screenshot = Screenshot.new("image/png",
-                                              [png].pack("m*"),
-                                              "base64")
-                  @current_data.screenshot = screenshot if @current_data
+                begin
+                  snapshot_surface = view.get_snapshot_finish(result)
+                rescue
+                  error do
+                    message = "failed to create snapshot: #{view.uri}: "
+                    message << "#{$!.class}: #{$!.message}"
+                    "#{log_tag}[screenshot][failed] #{message}"
+                  end
+                else
+                  debug do
+                    size = "#{snapshot_surface.width}x#{snapshot_surface.height}"
+                    "#{log_tag}[screenshot][finish] #{view.uri}: #{size}"
+                  end
+                  unless snapshot_surface.width.zero?
+                    png = convert_snapshot_surface_to_png(snapshot_surface)
+                    screenshot = Screenshot.new("image/png",
+                                                [png].pack("m*"),
+                                                "base64")
+                    @current_data.screenshot = screenshot if @current_data
+                  end
                 end
               end
             end
