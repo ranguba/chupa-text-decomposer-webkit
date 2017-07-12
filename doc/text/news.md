@@ -1,5 +1,11 @@
 # News
 
+## 1.0.6: 2017-07-12
+
+### Fixes
+
+  * Added missing executable files.
+
 ## 1.0.5: 2017-07-12
 
 ### Improvements
