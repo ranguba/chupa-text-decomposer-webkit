@@ -58,8 +58,8 @@ module ChupaText
       end
 
       def decompose(data)
-        screenshoter = Screenshoter.new(data)
-        screenshoter.run
+        @@screenshoter ||= Screenshoter.new
+        @@screenshoter.run(data)
         data[AVAILABLE_ATTRIBUTE_NAME] = !data.screenshot.nil?
         yield(data)
       end
@@ -68,31 +68,29 @@ module ChupaText
         include Loggable
         include LogTag
 
-        def initialize(data)
-          @data = data
-          @@view_context ||= create_view_context
+        def initialize
+          @view_context = create_view_context
+          @view = create_view
+          @window = create_window
           @main_loop = GLib::MainLoop.new(nil, false)
           @timeout_second = compute_timeout_second
+          @screenshot_cancellable = nil
+          @current_data = nil
         end
 
-        def run
-          view = WebKit2Gtk::WebView.new(context: @@view_context)
-          window = Gtk::OffscreenWindow.new
-          window.set_default_size(800, 600)
-          window.add(view)
-          window.show_all
-
-          setup_callbacks(view)
-
-          timeout(view) do
-            debug do
-              "#{log_tag}[load][HTML] #{@data.uri}"
+        def run(data)
+          @current_data = data
+          begin
+            timeout do
+              debug do
+                "#{log_tag}[load][HTML] #{data.uri}"
+              end
+              @view.load_html(data.source.body, data.source.uri.to_s)
+              @main_loop.run
             end
-            view.load_html(@data.source.body, @data.source.uri.to_s)
-            @main_loop.run
+          ensure
+            @current_data = nil
           end
-
-          window.destroy
         end
 
         private
@@ -117,7 +115,9 @@ module ChupaText
           context
         end
 
-        def setup_callbacks(view)
+        def create_view
+          view = WebKit2Gtk::WebView.new(context: @view_context)
+
           view.signal_connect("load-changed") do |_, load_event|
             debug do
               "#{log_tag}[load][#{load_event.nick}] #{view.uri}"
@@ -128,7 +128,12 @@ module ChupaText
               debug do
                 "#{log_tag}[screenshot][start] #{view.uri}"
               end
-              view.get_snapshot(:full_document, :none) do |_, result|
+              cancel_screenshot
+              @screenshot_cancellable = Gio::Cancellable.new
+              view.get_snapshot(:full_document,
+                                :none,
+                                @screenshot_cancellable) do |_, result|
+                @screenshot_cancellable = nil
                 @main_loop.quit
                 snapshot_surface = view.get_snapshot_finish(result)
                 debug do
@@ -137,14 +142,17 @@ module ChupaText
                 end
                 unless snapshot_surface.width.zero?
                   png = convert_snapshot_surface_to_png(snapshot_surface)
-                  @data.screenshot = Screenshot.new("image/png",
-                                                    [png].pack("m*"),
-                                                    "base64")
+                  screenshot = Screenshot.new("image/png",
+                                              [png].pack("m*"),
+                                              "base64")
+                  @current_data.screenshot = screenshot if @current_data
                 end
               end
             end
           end
+
           view.signal_connect("load-failed") do |_, _, failed_uri, error|
+            cancel_screenshot
             @main_loop.quit
             error do
               message = "failed to load URI: #{failed_uri}: "
@@ -153,10 +161,13 @@ module ChupaText
             end
             true
           end
+
+          view
         end
 
         def convert_snapshot_surface_to_png(snapshot_surface)
-          screenshot_width, screenshot_height = @data.expected_screenshot_size
+          screenshot_width, screenshot_height =
+            @current_data.expected_screenshot_size
 
           screenshot_surface = Cairo::ImageSurface.new(:argb32,
                                                        screenshot_width,
@@ -175,22 +186,42 @@ module ChupaText
           png.string
         end
 
-        def timeout(view)
+        def create_window
+          window = Gtk::OffscreenWindow.new
+          window.set_default_size(800, 600)
+          window.add(@view)
+          window.show_all
+          window
+        end
+
+        def cancel_screenshot
+          return if @screenshot_cancellable.nil?
+
+          debug do
+            "#{log_tag}[snapshot][cancel] cancel screenshot: #{@view.uri}"
+          end
+          @screenshot_cancellable.cancel
+          @screenshot_cancellable = nil
+        end
+
+        def timeout
           timeout_id = GLib::Timeout.add_seconds(@timeout_second) do
             timeout_id = nil
             error do
-              message = "timeout to load URI: #{@timeout_second}s: #{view.uri}"
-              message << ": loading" if view.loading?
+              message = "timeout to load URI: #{@timeout_second}s: #{@view.uri}"
+              message << ": loading" if @view.loading?
               "#{log_tag}[load][timeout] #{message}"
             end
-            if view.loading?
-              view.signal_connect("close") do
+            cancel_screenshot
+            if @view.loading?
+              close_id = @view.signal_connect("close") do
+                @view.signal_handler_disconnect(close_id)
                 @main_loop.quit
                 error do
-                  "#{log_tag}[load][closed] #{view.uri}"
+                  "#{log_tag}[load][closed] #{@view.uri}"
                 end
               end
-              view.try_close
+              @view.try_close
             else
               @main_loop.quit
             end
