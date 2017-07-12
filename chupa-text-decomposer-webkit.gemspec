@@ -38,6 +38,9 @@ Gem::Specification.new do |spec|
   spec.files += Dir.glob("lib/**/*.rb")
   spec.files += Dir.glob("doc/text/*")
   spec.files += Dir.glob("test/**/*")
+  Dir.chdir("bin") do
+    spec.executables = Dir.glob("*")
+  end
 
   spec.add_runtime_dependency("chupa-text", ">= 1.0.7")
   spec.add_runtime_dependency("webkit2-gtk", ">= 3.1.7")
