@@ -19,7 +19,15 @@ require "webkit2-gtk"
 module ChupaText
   module Decomposers
     class WebKit < Decomposer
+      module LogTag
+        private
+        def log_tag
+          "[decomposer][webkit]"
+        end
+      end
+
       include Loggable
+      include LogTag
 
       registry.register("webkit", self)
 
@@ -50,166 +58,162 @@ module ChupaText
       end
 
       def decompose(data)
-        data.screenshot = create_screenshot(data.source)
+        screenshoter = Screenshoter.new(data)
+        screenshoter.run
         data[AVAILABLE_ATTRIBUTE_NAME] = !data.screenshot.nil?
         yield(data)
       end
 
-      private
-      def create_screenshot(data)
-        screenshot = nil
+      class Screenshoter
+        include Loggable
+        include LogTag
 
-        @@view_context ||= create_view_context
-        view = WebKit2Gtk::WebView.new(context: @@view_context)
-        window = Gtk::OffscreenWindow.new
-        window.set_default_size(800, 600)
-        window.add(view)
-        window.show_all
-
-        status = {
-          finished: false,
-          load_failed: false,
-          screenshot: nil,
-        }
-        prepare_screenshot(data, view, status)
-
-        main_context = GLib::MainContext.default
-        timeout(compute_timeout_second, view, main_context, status) do
-          debug do
-            "#{log_tag}[load][URI] #{data.uri}"
-          end
-          view.load_uri(data.uri.to_s)
-          until status[:finished]
-            main_context.iteration(true)
-          end
-
-          if status[:load_failed]
-            status[:finished] = false
-            debug do
-              "#{log_tag}[load][HTML] #{data.uri}"
-            end
-            view.load_html(data.body, data.uri.to_s)
-            until status[:finished]
-              main_context.iteration(true)
-            end
-          end
+        def initialize(data)
+          @data = data
+          @@view_context ||= create_view_context
+          @main_loop = GLib::MainLoop.new(nil, false)
+          @timeout_second = compute_timeout_second
         end
 
-        window.destroy
+        def run
+          view = WebKit2Gtk::WebView.new(context: @@view_context)
+          window = Gtk::OffscreenWindow.new
+          window.set_default_size(800, 600)
+          window.add(view)
+          window.show_all
 
-        status[:screenshot]
-      end
+          setup_callbacks(view)
 
-      def create_view_context
-        context = WebKit2Gtk::WebContext.new(ephemeral: true)
-        http_proxy = ENV["http_proxy"]
-        https_proxy = ENV["https_proxy"]
-        ftp_proxy = ENV["ftp_proxy"]
-        if http_proxy or https_proxy or ftp_proxy
-          proxy_settings = WebKit2Gtk::NetworkProxySettings.new
-          if http_proxy
-            proxy_settings.add_proxy_for_scheme("http", http_proxy)
-          end
-          if https_proxy
-            proxy_settings.add_proxy_for_scheme("https", https_proxy)
-          end
-          if ftp_proxy
-            proxy_settings.add_proxy_for_scheme("ftp", ftp_proxy)
-          end
-          context.set_network_proxy_settings(:custom, proxy_settings)
-        end
-        context
-      end
-
-      def prepare_screenshot(data, view, status)
-        view.signal_connect("load-changed") do |_, load_event|
-          debug do
-            "#{log_tag}[load][#{load_event.nick}] #{view.uri}"
-          end
-
-          case load_event
-          when WebKit2Gtk::LoadEvent::FINISHED
+          timeout(view) do
             debug do
-              "#{log_tag}[screenshot][start] #{view.uri}"
+              "#{log_tag}[load][HTML] #{@data.uri}"
             end
-            view.get_snapshot(:full_document, :none) do |_, result|
-              status[:finished] = true
-              snapshot_surface = view.get_snapshot_finish(result)
+            view.load_html(@data.source.body, @data.source.uri.to_s)
+            @main_loop.run
+          end
+
+          window.destroy
+        end
+
+        private
+        def create_view_context
+          context = WebKit2Gtk::WebContext.new(ephemeral: true)
+          http_proxy = ENV["http_proxy"]
+          https_proxy = ENV["https_proxy"]
+          ftp_proxy = ENV["ftp_proxy"]
+          if http_proxy or https_proxy or ftp_proxy
+            proxy_settings = WebKit2Gtk::NetworkProxySettings.new
+            if http_proxy
+              proxy_settings.add_proxy_for_scheme("http", http_proxy)
+            end
+            if https_proxy
+              proxy_settings.add_proxy_for_scheme("https", https_proxy)
+            end
+            if ftp_proxy
+              proxy_settings.add_proxy_for_scheme("ftp", ftp_proxy)
+            end
+            context.set_network_proxy_settings(:custom, proxy_settings)
+          end
+          context
+        end
+
+        def setup_callbacks(view)
+          view.signal_connect("load-changed") do |_, load_event|
+            debug do
+              "#{log_tag}[load][#{load_event.nick}] #{view.uri}"
+            end
+
+            case load_event
+            when WebKit2Gtk::LoadEvent::FINISHED
               debug do
-                size = "#{snapshot_surface.width}x#{snapshot_surface.height}"
-                "#{log_tag}[screenshot][finish] #{view.uri}: #{size}"
+                "#{log_tag}[screenshot][start] #{view.uri}"
               end
-              unless snapshot_surface.width.zero?
-                png = convert_snapshot_surface_to_png(data, snapshot_surface)
-                status[:screenshot] = Screenshot.new("image/png",
-                                                     [png].pack("m*"),
-                                                     "base64")
+              view.get_snapshot(:full_document, :none) do |_, result|
+                @main_loop.quit
+                snapshot_surface = view.get_snapshot_finish(result)
+                debug do
+                  size = "#{snapshot_surface.width}x#{snapshot_surface.height}"
+                  "#{log_tag}[screenshot][finish] #{view.uri}: #{size}"
+                end
+                unless snapshot_surface.width.zero?
+                  png = convert_snapshot_surface_to_png(snapshot_surface)
+                  @data.screenshot = Screenshot.new("image/png",
+                                                    [png].pack("m*"),
+                                                    "base64")
+                end
               end
             end
           end
-        end
-        view.signal_connect("load-failed") do |_, _, failed_uri, error|
-          status[:finished] = true
-          status[:load_failed] = true
-          error do
-            message = "failed to load URI: #{failed_uri}: "
-            message << "#{error.class}(#{error.code}): #{error.message}"
-            "#{log_tag}[load][failed] #{message}"
+          view.signal_connect("load-failed") do |_, _, failed_uri, error|
+            @main_loop.quit
+            error do
+              message = "failed to load URI: #{failed_uri}: "
+              message << "#{error.class}(#{error.code}): #{error.message}"
+              "#{log_tag}[load][failed] #{message}"
+            end
+            true
           end
-          true
         end
-      end
 
-      def convert_snapshot_surface_to_png(data, snapshot_surface)
-        screenshot_width, screenshot_height = data.expected_screenshot_size
+        def convert_snapshot_surface_to_png(snapshot_surface)
+          screenshot_width, screenshot_height = @data.expected_screenshot_size
 
-        screenshot_surface = Cairo::ImageSurface.new(:argb32,
-                                                     screenshot_width,
-                                                     screenshot_height)
-        context = Cairo::Context.new(screenshot_surface)
-        context.set_source_color(:white)
-        context.paint
+          screenshot_surface = Cairo::ImageSurface.new(:argb32,
+                                                       screenshot_width,
+                                                       screenshot_height)
+          context = Cairo::Context.new(screenshot_surface)
+          context.set_source_color(:white)
+          context.paint
 
-        ratio = screenshot_width.to_f / snapshot_surface.width
-        context.scale(ratio, ratio)
-        context.set_source(snapshot_surface)
-        context.paint
+          ratio = screenshot_width.to_f / snapshot_surface.width
+          context.scale(ratio, ratio)
+          context.set_source(snapshot_surface)
+          context.paint
 
-        png = StringIO.new
-        screenshot_surface.write_to_png(png)
-        png.string
-      end
+          png = StringIO.new
+          screenshot_surface.write_to_png(png)
+          png.string
+        end
 
-      def timeout(second, view, main_context, status)
-        timeout_id = nil
-        timeout_source = GLib::Timeout.source_new_seconds(second)
-        timeout_source.set_callback do
-          timeout_id = nil
-          status[:finished] = true
-          error do
-            message = "timeout to load URI: #{second}s: #{view.uri}"
-            "#{log_tag}[load][timeout] #{message}"
+        def timeout(view)
+          timeout_id = GLib::Timeout.add_seconds(@timeout_second) do
+            timeout_id = nil
+            error do
+              message = "timeout to load URI: #{@timeout_second}s: #{view.uri}"
+              message << ": loading" if view.loading?
+              "#{log_tag}[load][timeout] #{message}"
+            end
+            if view.loading?
+              view.signal_connect("close") do
+                @main_loop.quit
+                error do
+                  "#{log_tag}[load][closed] #{view.uri}"
+                end
+              end
+              view.try_close
+            else
+              @main_loop.quit
+            end
+            GLib::Source::REMOVE
           end
-          GLib::Source::REMOVE
-        end
-        timeout_id = timeout_source.attach(main_context)
-        yield
-        GLib::Source.remove(timeout_id) if timeout_id
-      end
 
-      def compute_timeout_second
-        default_timeout = 5
-        timeout_string =
-          ENV["CHUPA_TEXT_DECOMPOSER_WEBKIT_TIMEOUT"] || default_timeout.to_s
-        begin
-          Integer(timeout_string)
-        rescue ArgumentError
-          default_timeout
+          begin
+            yield
+          ensure
+            GLib::Source.remove(timeout_id) if timeout_id
+          end
         end
-      end
 
-      def log_tag
-        "[decomposer][webkit]"
+        def compute_timeout_second
+          default_timeout = 5
+          timeout_string =
+            ENV["CHUPA_TEXT_DECOMPOSER_WEBKIT_TIMEOUT"] || default_timeout.to_s
+          begin
+            Integer(timeout_string)
+          rescue ArgumentError
+            default_timeout
+          end
+        end
       end
     end
   end
