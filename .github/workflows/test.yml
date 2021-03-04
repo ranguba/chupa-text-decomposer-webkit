@@ -24,4 +24,4 @@ jobs:
           bundle install
       - name: Test
         run: |
-          bundle exec test/run-test.rb
+          bundle exec ruby test/run-test.rb
