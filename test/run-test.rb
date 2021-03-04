@@ -18,8 +18,6 @@
 
 $VERBOSE = true
 
-require "bundler/setup"
-
 require "test-unit"
 
 require "chupa-text"
