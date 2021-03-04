@@ -1,5 +1,11 @@
 # News
 
+## 1.0.7: 2021-03-04
+
+### Improvements
+
+  * screenshoter: Stopped to depend on locale.
+
 ## 1.0.6: 2017-07-12
 
 ### Fixes
