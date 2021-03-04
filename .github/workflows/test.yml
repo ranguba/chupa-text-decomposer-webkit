@@ -20,6 +20,7 @@ jobs:
           ruby-version: ${{ matrix.ruby-version }}
       - name: Install dependencies to build gems
         run: |
+          sudo apt update
           bundle install
       - name: Test
         run: |
