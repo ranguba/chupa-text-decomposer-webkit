@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 #
-# Copyright (C) 2017  Kouhei Sutou <kou@clear-code.com>
+# Copyright (C) 2017-2021  Sutou Kouhei <kou@clear-code.com>
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -31,7 +31,7 @@ end
 
 path, uri, output_path, width, height = ARGV
 screenshoter = ChupaTextDecomposerWebKit::Screenshoter.new(logger)
-File.open(path) do |input|
+File.open(path, encoding: "UTF-8") do |input|
   screenshoter.run(input.read,
                    uri,
                    output_path,
