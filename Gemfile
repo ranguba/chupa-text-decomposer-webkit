@@ -1,6 +1,6 @@
 # -*- ruby -*-
 #
-# Copyright (C) 2017  Kouhei Sutou <kou@clear-code.com>
+# Copyright (C) 2017-2024  Sutou Kouhei <kou@clear-code.com>
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -19,6 +19,12 @@
 source "https://rubygems.org/"
 
 gemspec
+
+gem "bundler"
+gem "kramdown"
+gem "packnga"
+gem "rake"
+gem "test-unit"
 
 base_dir = File.dirname(__FILE__)
 local_chupa_text_dir = File.join(base_dir, "..", "chupa-text")
