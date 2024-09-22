@@ -36,7 +36,7 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y -V \
-            liblibgirepository1.0-dev \
+            libgirepository1.0-dev \
             libwebkit2gtk-4.0-dev \
       - uses: ruby/setup-ruby@v1
         with:
