@@ -32,13 +32,16 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v2
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y -V \
+            liblibgirepository1.0-dev \
+            libwebkit2gtk-4.0-dev \
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby-version }}
-      - name: Install dependencies to build gems
-        run: |
-          sudo apt update
-          bundle install
+          bundler-cache: true
       - name: Test
         # TODO: No test
         if: |
