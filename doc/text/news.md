@@ -1,5 +1,11 @@
 # News
 
+## 1.0.8: 2024-09-22
+
+### Fixes
+
+  * Added missing `Pathname` -> `String` conversion.
+
 ## 1.0.7: 2021-03-04
 
 ### Improvements
