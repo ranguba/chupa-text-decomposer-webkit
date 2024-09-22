@@ -1,4 +1,4 @@
-# Copyright (C) 2021-2024  Sutou Kouhei <kou@clear-code.com>
+# Copyright (C) 2024  Sutou Kouhei <kou@clear-code.com>
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -14,34 +14,29 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
-name: Test
+name: Release
 on:
-  - push
-  - pull_request
+  push:
+    tags:
+      - "*"
 jobs:
-  test:
-    name: ${{ matrix.ruby-version }}
+  github:
+    name: GitHub
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        ruby-version:
-          - "3.1"
-          - "3.2"
-          - "3.3"
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v2
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: ${{ matrix.ruby-version }}
-      - name: Install dependencies to build gems
+      - uses: actions/checkout@v4
+      - name: Release
         run: |
-          sudo apt update
-          bundle install
-      - name: Test
-        # TODO: No test
-        if: |
-          false
-        run: |
-          bundle exec ruby test/run-test.rb
+          ruby \
+            -e 'print("## "); puts(ARGF.read.split(/^## /)[1])' \
+            doc/text/news.md > release-note.md
+          title="$(head -n 1 release-note.md | sed -e 's/^## //')"
+          tail -n +2 release-note.md > release-note-without-version.md
+          gh release create \
+            ${GITHUB_REF_NAME} \
+            --discussion-category Announcements \
+            --notes-file release-note-without-version.md \
+            --title "${title}"
+        env:
+          GH_TOKEN: ${{ github.token }}
