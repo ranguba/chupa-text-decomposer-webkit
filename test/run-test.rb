@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 #
-# Copyright (C) 2017  Kouhei Sutou <kou@clear-code.com>
+# Copyright (C) 2017-2024  Sutou Kouhei <kou@clear-code.com>
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -24,4 +24,4 @@ require "chupa-text"
 
 ChupaText::Decomposers.load
 
-exit(Test::Unit::AutoRunner.run(true))
+exit(Test::Unit::AutoRunner.run(true, __dir__))
