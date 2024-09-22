@@ -1,4 +1,4 @@
-# Copyright (C) 2017  Kouhei Sutou <kou@clear-code.com>
+# Copyright (C) 2017-2024  Sutou Kouhei <kou@clear-code.com>
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -117,7 +117,7 @@ module ChupaText
             end
           end
           successed = @command.run(@screenshoter,
-                                   html_path,
+                                   html_path.to_s,
                                    uri,
                                    output_path,
                                    width.to_s,
